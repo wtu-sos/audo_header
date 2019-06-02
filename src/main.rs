@@ -1,4 +1,8 @@
 use std::process::Command;
+use std::path::Path;
+use std::collections::LinkedList;
+use std::os::unix::fs::FileExt;
+
 use walkdir::{DirEntry, WalkDir};
 
 fn is_hidden(entry: &DirEntry) -> bool {
@@ -16,8 +20,8 @@ fn is_skip(entry: &DirEntry) -> bool {
     return false;
 }
 
-#[derive(Debug)]
-struct SingleCommit {
+#[derive(Debug, Clone)]
+pub struct SingleCommit {
     author: String,
     date: String,
     content: String,
@@ -41,7 +45,7 @@ impl SingleCommit {
         if author.starts_with("Author") {
             let sp = author.find(":").unwrap_or(0);
             let author_str = author.split_off(sp+1);
-            println!("author: {}", author_str);
+            //println!("author: {}", author_str);
             self.author += author_str.trim_start();
 
             return true;
@@ -55,7 +59,7 @@ impl SingleCommit {
         if date.starts_with("Date") {
             let sp = date.find(":").unwrap_or(0);
             let date_str = date.split_off(sp+1);
-            println!("date: {}", date_str);
+            //println!("date: {}", date_str);
             self.date += date_str.trim_start();
 
             return true;
@@ -72,9 +76,10 @@ impl SingleCommit {
 fn print_git_log(entry: &DirEntry) {
     println!("{}", entry.path().display());
     let mut cmd = Command::new("git");
-    cmd.current_dir("/home/sos/Document/hp-io/");
+    cmd.current_dir("/home/yu/git/shadowsocks-rust/");
     cmd.arg("log").arg(entry.path());
     println!("cmd: {:?}", cmd);
+    let mut git_log_list = LinkedList::new();
     if let Ok(output) = cmd.output() {
         if output.status.success() {
             let output = String::from_utf8_lossy(&output.stdout);
@@ -83,8 +88,9 @@ fn print_git_log(entry: &DirEntry) {
             for content in log_deal {
                 if content.starts_with("commit") {
                     if ci.is_filled_complete() {
-                        println!("output: {:?}", ci);
+                        //println!("output: {:?}", ci);
                         // todo: 
+                        git_log_list.push_back(ci);
                     }
 
                     ci = SingleCommit::new();
@@ -97,17 +103,43 @@ fn print_git_log(entry: &DirEntry) {
                 }   
             }
             if ci.is_filled_complete() {
-                println!("output: {:?}", ci);
+                //println!("output: {:?}", ci);
                 // todo: 
+                git_log_list.push_back(ci);
             }
         } else {
             println!("error: {:?}", String::from_utf8_lossy(&output.stderr));
         }
     }
+
+    // todo : handle file header;
+    println!("first: {:?}, last: {:?}", git_log_list.front().unwrap(), git_log_list.back().unwrap());
+    add_file_header(entry.path(), git_log_list.front().unwrap().clone());
+}
+
+
+pub fn add_file_header(p: &Path, ci: SingleCommit) {
+    println!("add_file_header file: {:?}", p);
+    let header = String::from("// test adding header content to file");
+    //let mut content = std::fs::File::open(p).unwrap();
+    let content = std::fs::OpenOptions::new()
+                                    .read(true)
+                                    .write(true)
+                                    .open(p).unwrap();
+    println!("content: {:?}", content);
+    let r = content.write_all_at(header.as_bytes(), 0);
+    match r {
+        Ok(()) => {
+            println!("add_file_header file: {:?}  success!!!!", p);
+        },
+        Err(e) => {
+            println!("add_file_header file: {:?}  failed:{:?}", p, e);
+        }
+    }
 }
 
 fn main() {
-    let mut it = WalkDir::new("/home/sos/Document/hp-io/").into_iter();
+    let mut it = WalkDir::new("/home/yu/git/shadowsocks-rust/").into_iter();
 
     loop {
         let entry = match it.next() {
